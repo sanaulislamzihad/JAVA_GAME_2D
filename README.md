@@ -2,6 +2,12 @@
 
 A 2D top-down action game built with Java and Swing. Collect keys to clear levels, avoid shooter enemies, and use heal/time gems before time runs out.
 
+## Screenshot
+
+![Gameplay screenshot](image/Screenshot.png)
+
+*In-game: level, keys, HP, timer, shooter enemy, and collectible gems.*
+
 ---
 
 ## Concept & Features
