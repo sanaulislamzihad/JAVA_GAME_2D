@@ -1,21 +1,27 @@
 package Main;
 
 import Sound.Sound;
+import entity.Bullet;
 import entity.Player;
+import entity.ShooterEnemy;
+import object.HealGem;
 import object.KeyObject;
+import object.TimeGem;
 import tiles.TileManage;
 
 import javax.swing.*;
 import java.awt.*;
 import java.text.DecimalFormat;
+import java.util.ArrayList;
+import java.util.List;
 
 // GamePanel ক্লাস, যেটা গেমের মূল স্ক্রিন এবং ম্যানেজমেন্টের কাজ করে
 public class GamePanel extends JPanel implements Runnable {
 
     // স্ক্রিন সেটআপ
-    final int originalTileSize = 16; // প্রতিটি টাইলের আসল সাইজ ১৬x১৬
-    final int scale = 3; // টাইল স্কেল ৩ গুণ বড় করা হবে
-    public final int tile_size = originalTileSize * scale; // টাইলের চূড়ান্ত সাইজ (১৬*৩ = ৪৮)
+    final int originalTileSize = 16;
+    final int scale = 4; // ৪ = বড় ডিসপ্লে (১৬*৪=৬৪px টাইল), ৩ = ছোট
+    public final int tile_size = originalTileSize * scale;
 
     // স্ক্রিনের কলাম ও রো সংখ্যা
     public final int maxScreenCol = 16;
@@ -47,18 +53,28 @@ public class GamePanel extends JPanel implements Runnable {
     public AssetSet assetSet = new AssetSet(this); // গেমের বিভিন্ন অ্যাসেট সেট করার জন্য অবজেক্ট
     public Collision colissionChecker = new Collision(this); // কলিশন চেক করার জন্য অবজেক্ট
 
+    public final List<Bullet> bullets = new ArrayList<>();
+    public final List<ShooterEnemy> shooterEnemies = new ArrayList<>();
+
     // simple game state
     boolean paused = false;
 
     // level system
-    private static final int LEVEL_TIME_LIMIT_SEC = 60;
+    private static final int LEVEL_TIME_LIMIT_SEC = 90;
     private static final int[] REQUIRED_KEYS_PER_LEVEL = {5, 6, 7, 8, 10}; // 5 levels: L1=5, L5=10
     private int level = 1;
     private int keysCollectedThisLevel = 0;
     private long levelStartNano = 0L;
+    private int levelBonusTimeSeconds = 0; // added by time gems
     private boolean transitioning = false;
     private long transitionStartNano = 0L;
     private String bannerText = "";
+    private String damageIndicator = "";
+    private int damageIndicatorFrames = 0;
+    private String gemIndicatorText = "";
+    private int gemIndicatorFrames = 0;
+    private int gemIndicatorX = 0, gemIndicatorY = 0;
+    private boolean pendingNextLevel = false;
 
     // কনস্ট্রাক্টর - গেমপ্যানেল সেটআপ
     public GamePanel() {
@@ -117,7 +133,12 @@ public class GamePanel extends JPanel implements Runnable {
             double t = (System.nanoTime() - transitionStartNano) / 1_000_000_000.0;
             if (t >= 1.5) {
                 transitioning = false;
-                bannerText = "";
+                if (pendingNextLevel) {
+                    pendingNextLevel = false;
+                    startLevel(level + 1);
+                } else {
+                    bannerText = "";
+                }
             }
             return;
         }
@@ -125,13 +146,39 @@ public class GamePanel extends JPanel implements Runnable {
         // time limit check
         if (levelStartNano != 0L) {
             double elapsed = (System.nanoTime() - levelStartNano) / 1_000_000_000.0;
-            if (elapsed >= LEVEL_TIME_LIMIT_SEC) {
+            int limit = LEVEL_TIME_LIMIT_SEC + levelBonusTimeSeconds;
+            if (elapsed >= limit) {
                 failLevel();
                 return;
             }
         }
 
+        if (player.hp <= 0) {
+            failLevel();
+            return;
+        }
+
         player.update();
+
+        for (ShooterEnemy e : shooterEnemies) e.update(bullets);
+        for (Bullet b : bullets) b.update(this);
+        // Bullet vs player
+        Rectangle playerBox = new Rectangle(
+                player.worldX + player.solidAreaX,
+                player.worldY + player.solidAreaY,
+                player.solid.width,
+                player.solid.height);
+        for (Bullet b : bullets) {
+            if (!b.active) continue;
+            if (b.getHitbox().intersects(playerBox)) {
+                player.takeDamage(1);
+                showDamageIndicator(1);
+                b.active = false;
+            }
+        }
+        bullets.removeIf(b -> !b.active);
+        if (damageIndicatorFrames > 0) damageIndicatorFrames--;
+        if (gemIndicatorFrames > 0) gemIndicatorFrames--;
     }
 
     DecimalFormat df = new DecimalFormat("0.00"); // সময় সুন্দরভাবে ফরম্যাট করার জন্য
@@ -159,8 +206,28 @@ public class GamePanel extends JPanel implements Runnable {
 
         int timeLeft = getTimeLeftSeconds();
         g2.drawString("Left: " + formatTime(timeLeft), tile_size * 11, 134);
+        g2.drawString("HP: " + player.hp + "/" + Player.MAX_HP, tile_size * 11, 162);
+        g2.setFont(new Font("Arial", Font.PLAIN, 12));
+        g2.setColor(Color.YELLOW);
+        g2.drawString("v2", tile_size * 11, 182);
 
+        for (ShooterEnemy e : shooterEnemies) e.draw(g2, this);
+        for (Bullet b : bullets) b.draw(g2, this);
         player.draw(g2); // প্লেয়ার আঁকা
+        if (damageIndicatorFrames > 0 && !damageIndicator.isEmpty()) {
+            int px = player.getScreenX() + tile_size / 2;
+            int py = player.getScreenY() - 8 - (60 - damageIndicatorFrames) / 3;
+            g2.setFont(new Font("Arial", Font.BOLD, 28));
+            g2.setColor(Color.RED);
+            g2.drawString(damageIndicator, px - 15, py);
+        }
+        if (gemIndicatorFrames > 0 && !gemIndicatorText.isEmpty()) {
+            int py = gemIndicatorY - 10 - (50 - gemIndicatorFrames) / 2;
+            g2.setFont(new Font("Arial", Font.BOLD, 26));
+            g2.setColor(new Color(50, 220, 100));
+            int w = g2.getFontMetrics().stringWidth(gemIndicatorText);
+            g2.drawString(gemIndicatorText, gemIndicatorX - w / 2, py);
+        }
 
         if (!bannerText.isEmpty()) {
             g2.setFont(new Font("Arial", Font.BOLD, 42));
@@ -205,18 +272,44 @@ public class GamePanel extends JPanel implements Runnable {
         sound.play();
     }
 
-    public void collectKey(int objectIndex) {
+    /** Handle collecting any object (key, HealGem, TimeGem) by name. */
+    public void collectObject(int objectIndex) {
         if (objectIndex < 0 || objectIndex >= obj.length) return;
         if (obj[objectIndex] == null) return;
 
-        keysCollectedThisLevel++;
+        String name = obj[objectIndex].name;
         setGemSound(1);
         obj[objectIndex] = null;
 
-        int required = getRequiredKeys(level);
-        if (keysCollectedThisLevel >= required) {
-            completeLevel();
+        if ("Gems".equals(name)) {
+            keysCollectedThisLevel++;
+            int required = getRequiredKeys(level);
+            if (keysCollectedThisLevel >= required) completeLevel();
+        } else if ("HealGem".equals(name)) {
+            player.heal(HealGem.HEAL_AMOUNT);
+            showGemIndicator(player.getScreenX() + tile_size / 2, player.getScreenY(), "+1", true);
+        } else if ("TimeGem".equals(name)) {
+            addTimeToLevel(TimeGem.TIME_SECONDS);
+            showGemIndicator(player.getScreenX() + tile_size / 2, player.getScreenY(), "+1", true);
         }
+    }
+
+    /** জেম নিলে সবুজ +1 ভাসমান দেখাতে। */
+    public void showGemIndicator(int screenX, int screenY, String text, boolean green) {
+        gemIndicatorText = text;
+        gemIndicatorFrames = 50;
+        gemIndicatorX = screenX;
+        gemIndicatorY = screenY;
+    }
+
+    public void addTimeToLevel(int seconds) {
+        levelBonusTimeSeconds += seconds;
+    }
+
+    /** গুলি লাগলে ড্যামেজ সংখ্যা দেখাতে (যেমন -1)। */
+    public void showDamageIndicator(int damage) {
+        damageIndicator = "-" + damage;
+        damageIndicatorFrames = 60;
     }
 
     private void startLevel(int newLevel) {
@@ -225,9 +318,13 @@ public class GamePanel extends JPanel implements Runnable {
 
         level = newLevel;
         keysCollectedThisLevel = 0;
+        levelBonusTimeSeconds = 0;
         player.resetToSpawn();
+        bullets.clear();
+        shooterEnemies.clear();
         tileM.loadLevel(level);
         assetSet.placeKeysForLevel(level, getRequiredKeys(level));
+        assetSet.placeEnemiesForLevel(level);
 
         levelStartNano = System.nanoTime();
         bannerText = "LEVEL " + level;
@@ -236,20 +333,18 @@ public class GamePanel extends JPanel implements Runnable {
     }
 
     private void completeLevel() {
-        bannerText = "LEVEL CLEAR!";
-        transitioning = true;
-        transitionStartNano = System.nanoTime();
-
         if (level >= REQUIRED_KEYS_PER_LEVEL.length) {
-            // game finished -> restart to level 1
             bannerText = "YOU WIN!";
             transitioning = true;
             transitionStartNano = System.nanoTime();
-            startLevel(1);
+            pendingNextLevel = true;
+            level = 0;
             return;
         }
-
-        startLevel(level + 1);
+        bannerText = "LEVEL CLEAR!";
+        transitioning = true;
+        transitionStartNano = System.nanoTime();
+        pendingNextLevel = true;
     }
 
     private void failLevel() {
@@ -259,15 +354,18 @@ public class GamePanel extends JPanel implements Runnable {
         startLevel(level);
     }
 
+    public int getLevel() { return level; }
+
     private int getRequiredKeys(int level) {
         int idx = Math.max(0, Math.min(REQUIRED_KEYS_PER_LEVEL.length - 1, level - 1));
         return REQUIRED_KEYS_PER_LEVEL[idx];
     }
 
     private int getTimeLeftSeconds() {
-        if (levelStartNano == 0L) return LEVEL_TIME_LIMIT_SEC;
+        if (levelStartNano == 0L) return LEVEL_TIME_LIMIT_SEC + levelBonusTimeSeconds;
         double elapsed = (System.nanoTime() - levelStartNano) / 1_000_000_000.0;
-        int left = (int) Math.ceil(LEVEL_TIME_LIMIT_SEC - elapsed);
+        int limit = LEVEL_TIME_LIMIT_SEC + levelBonusTimeSeconds;
+        int left = (int) Math.ceil(limit - elapsed);
         return Math.max(0, left);
     }
 

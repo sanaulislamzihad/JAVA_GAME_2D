@@ -18,6 +18,12 @@ public class Player extends Entity {
     private int screenXDefault;
     private int screenYDefault;
 
+    // HP and invincibility
+    public static final int MAX_HP = 3;
+    public int hp = MAX_HP;
+    private int invincibleFramesLeft = 0;
+    private static final int INVINCIBLE_FRAMES = 90; // 1.5 sec at 60 FPS
+
     // Constructor
     public Player(GamePanel gp, KeyHandler keyboard) {
         this.gp = gp;
@@ -87,10 +93,28 @@ public class Player extends Entity {
 
     public void resetToSpawn() {
         setDefaultValues();
+        hp = MAX_HP;
+        invincibleFramesLeft = 0;
+    }
+
+    public void heal(int amount) {
+        hp = Math.min(MAX_HP, hp + amount);
+    }
+
+    public void takeDamage(int amount) {
+        if (invincibleFramesLeft > 0) return;
+        hp = Math.max(0, hp - amount);
+        invincibleFramesLeft = INVINCIBLE_FRAMES;
+    }
+
+    public boolean isInvincible() {
+        return invincibleFramesLeft > 0;
     }
 
     // প্রতি frame এ player update করা হয়
     public void update() {
+        if (invincibleFramesLeft > 0) invincibleFramesLeft--;
+
         // কোনো key press করা হলে direction সেট করা
         if (keyboard.upPressed || keyboard.rightPressed || keyboard.downPressed || keyboard.leftPressed) {
             if (keyboard.upPressed) {
@@ -112,7 +136,7 @@ public class Player extends Entity {
             // Object collision / pickup
             int index = gp.colissionChecker.checkObject(this, true);
             if (index != 999) {
-                gp.collectKey(index);
+                gp.collectObject(index);
             }
 
             // যদি collision না থাকে, তাহলে move হবে
@@ -142,8 +166,9 @@ public class Player extends Entity {
         }
     }
 
-    // Player কে draw করা হয়
+    // Player কে draw করা হয় (flash when invincible)
     public void draw(Graphics2D g2) {
+        if (invincibleFramesLeft > 0 && (invincibleFramesLeft / 5) % 2 == 0) return; // flash
         BufferedImage image = null;
         switch (direction) {
             case "left":

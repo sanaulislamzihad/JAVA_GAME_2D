@@ -1,6 +1,7 @@
 package Main;
 
 import javax.swing.*;
+import java.awt.*;
 
 // DriverClass: প্রোগ্রামের main entry point, JFrame তৈরি করে GamePanel চালায়
 public class DriverClass {
@@ -12,19 +13,20 @@ public class DriverClass {
         // X বোতাম চাপলে প্রোগ্রাম বন্ধ হবে
         window.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-        // Window রিসাইজ করা যাবে না
-        window.setResizable(false);
+        // Window রিসাইজ করা যাবে – গেম ফিক্স রেজোলিউশনে স্কেল হয়ে দেখাবে
+        window.setResizable(true);
 
         // Window এর title সেট করা
         window.setTitle("The Legend of Zelda");
 
-        // GamePanel অবজেক্ট তৈরি করা
         GamePanel gamePanel = new GamePanel();
 
-        // GamePanel কে window-র ভিতরে add করা
-        window.add(gamePanel);
+        // গেম ফিক্স সাইজে, উইন্ডো বড় করলে মাঝে গেম – গেমপ্লে ঠিক
+        JPanel wrapper = new JPanel(new GridBagLayout());
+        wrapper.setBackground(Color.BLACK);
+        wrapper.add(gamePanel);
+        window.add(wrapper);
 
-        // Component গুলা their preferred size অনুযায়ী adjust করা
         window.pack();
 
         // Window screen-এর মাঝখানে দেখা যাবে

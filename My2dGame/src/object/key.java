@@ -12,10 +12,9 @@ public class key extends KeyObject {
         name = "Gems";  // Key object এর নাম 'Gems' রাখা হয়েছে
 
         try {
-            // Key object এর image load করা হচ্ছে
             image = ImageIO.read(Objects.requireNonNull(getClass().getResourceAsStream("/objects/key.png")));
         } catch (IOException e) {
-            throw new RuntimeException(e);  // Image load না হলে error throw করবে
+            throw new RuntimeException(e);
         }
     }
 }
